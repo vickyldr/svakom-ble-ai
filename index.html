@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SVAKOM 中继控制</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #fff;
+        }
+        .container {
+            background: rgba(255,255,255,0.08);
+            backdrop-filter: blur(20px);
+            border-radius: 30px;
+            padding: 30px 24px;
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 {
+            text-align: center;
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            background: linear-gradient(90deg, #ff6b6b, #ee5a24);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 13px;
+            color: rgba(255,255,255,0.4);
+            margin-bottom: 20px;
+        }
+        .status-bar {
+            background: rgba(255,255,255,0.06);
+            border-radius: 16px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 10px;
+            transition: all 0.3s;
+        }
+        .status-dot.disconnected { background: #ff4757; }
+        .status-dot.connecting { background: #ffa502; animation: pulse 0.8s infinite; }
+        .status-dot.connected { background: #2ed573; }
+        .status-dot.relay { background: #1e90ff; animation: pulse 0.8s infinite; }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        .status-text { font-size: 14px; font-weight: 500; }
+        .device-name { font-size: 13px; color: rgba(255,255,255,0.4); }
+        .btn {
+            width: 100%; padding: 16px; border: none; border-radius: 16px; font-size: 16px;
+            font-weight: 600; cursor: pointer; transition: all 0.2s; touch-action: manipulation;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: #fff;
+        }
+        .btn-primary:disabled { opacity: 0.4; transform: none; }
+        .btn-danger {
+            background: linear-gradient(135deg, #ff4757, #c0392b);
+            color: #fff;
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .input-group {
+            margin-top: 12px;
+            display: flex;
+            gap: 10px;
+        }
+        .input-group input {
+            flex: 1;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+        }
+        .input-group input::placeholder { color: rgba(255,255,255,0.3); }
+        .input-group .btn { flex: 0 0 auto; width: auto; padding: 12px 20px; font-size: 14px; }
+        .control-section {
+            margin-top: 20px;
+            opacity: 0.4;
+            pointer-events: none;
+            transition: all 0.4s;
+        }
+        .control-section.active { opacity: 1; pointer-events: all; }
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 8px;
+        }
+        .control-value { font-weight: 600; color: #ff6b6b; }
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            width: 100%; height: 6px; border-radius: 3px;
+            background: linear-gradient(90deg, rgba(255,107,107,0.2), rgba(255,107,107,0.6));
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 28px; height: 28px; border-radius: 50%;
+            background: radial-gradient(circle, #ff6b6b, #ee5a24);
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255,107,107,0.3);
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        .log {
+            margin-top: 16px;
+            padding: 12px 14px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
+            font-size: 11px;
+            font-family: "Courier New", monospace;
+            color: rgba(255,255,255,0.5);
+            max-height: 100px;
+            overflow-y: auto;
+            word-break: break-all;
+            line-height: 1.8;
+        }
+        .log .highlight { color: #ff6b6b; }
+        .log .error { color: #ff4757; }
+        .log .success { color: #2ed573; }
+        .log .info { color: #1e90ff; }
+        .footer {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 11px;
+            color: rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📡 SVAKOM 中继</h1>
+        <p class="subtitle">SL278H · 网页蓝牙中继</p>
+
+        <div class="status-bar">
+            <span class="status-text">
+                <span class="status-dot disconnected" id="statusDot"></span>
+                <span id="statusText">未连接</span>
+            </span>
+            <span class="device-name" id="deviceName">-</span>
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="relayUrl" placeholder="https://xxx.up.railway.app" value="">
+            <input type="password" id="relaySecret" placeholder="密码" value="" style="flex:0.6;">
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:8px;">
+            <button class="btn btn-secondary" id="connectRelayBtn" style="flex:1; padding:12px;">🔗 连接中继</button>
+            <button class="btn btn-secondary" id="connectBleBtn" style="flex:1; padding:12px;">🔵 连接蓝牙</button>
+        </div>
+
+        <div class="control-section" id="controlSection">
+            <div style="margin-top:20px;">
+                <div class="control-label">
+                    <span>⚡ 强度</span>
+                    <span class="control-value" id="intensityDisplay">0%</span>
+                </div>
+                <input type="range" id="intensitySlider" min="0" max="100" value="0">
+            </div>
+
+            <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <button class="btn btn-secondary" style="flex:1; padding:10px;" data-intensity="20">20%</button>
+                <button class="btn btn-secondary" style="flex:1; padding:10px;" data-intensity="40">40%</button>
+                <button class="btn btn-secondary" style="flex:1; padding:10px;" data-intensity="60">60%</button>
+                <button class="btn btn-secondary" style="flex:1; padding:10px;" data-intensity="80">80%</button>
+                <button class="btn btn-secondary" style="flex:1; padding:10px;" data-intensity="100">100%</button>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:12px;">
+                <button class="btn btn-danger" id="stopBtn" style="flex:1;">⏹ 停止</button>
+                <button class="btn btn-secondary" id="testBtn" style="flex:1;">🔬 测试</button>
+            </div>
+        </div>
+
+        <div class="log" id="log">等待操作...</div>
+        <div class="footer">中继模式 | 轮询间隔 300ms</div>
+    </div>
+
+    <script>
+        // ============================================================
+        // SVAKOM SL278H 网页中继
+        // 连接蓝牙 + 轮询云端指令
+        // ============================================================
+
+        // ---------- 配置 ----------
+        const SERVICE_UUID = "FFE0";
+        const CHARACTERISTIC_UUID = "FFE1";
+        const KEEPALIVE_INTERVAL_MS = 1500;
+        const POLL_INTERVAL_MS = 300;
+
+        // ---------- 状态 ----------
+        let bleDevice = null, bleServer = null, bleChar = null;
+        let isBleConnected = false;
+        let isRelayConnected = false;
+        let currentIntensity = 0;
+        let keepaliveTimer = null;
+        let pollTimer = null;
+        let relayUrl = '';
+        let relaySecret = '';
+        let isRunning = false;
+
+        // DOM
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const deviceName = document.getElementById('deviceName');
+        const relayUrlInput = document.getElementById('relayUrl');
+        const relaySecretInput = document.getElementById('relaySecret');
+        const connectRelayBtn = document.getElementById('connectRelayBtn');
+        const connectBleBtn = document.getElementById('connectBleBtn');
+        const intensitySlider = document.getElementById('intensitySlider');
+        const intensityDisplay = document.getElementById('intensityDisplay');
+        const controlSection = document.getElementById('controlSection');
+        const log = document.getElementById('log');
+        const stopBtn = document.getElementById('stopBtn');
+        const testBtn = document.getElementById('testBtn');
+
+        // ---------- 工具 ----------
+        function logMessage(msg, type = '') {
+            const time = new Date().toLocaleTimeString();
+            const cls = type ? ` class="${type}"` : '';
+            log.innerHTML = `<span${cls}>[${time}] ${msg}</span>\n` + log.innerHTML;
+            if (log.children.length > 50) log.removeChild(log.lastChild);
+        }
+
+        function setStatus(state, text) {
+            statusDot.className = 'status-dot ' + state;
+            statusText.textContent = text;
+        }
+
+        function buildCommand(intensity) {
+            const value = Math.round((intensity / 100) * 255);
+            if (intensity === 0 || value === 0) {
+                return new Uint8Array([0x55, 0x04, 0x00, 0x00, 0x00, 0x00, 0xAA]);
+            }
+            return new Uint8Array([0x55, 0x04, 0x00, 0x00, 0x01, value, 0xAA]);
+        }
+
+        // ---------- 发送蓝牙指令 ----------
+        async function sendBleCommand(intensity) {
+            if (!bleChar || !isBleConnected) {
+                return false;
+            }
+            try {
+                const bytes = buildCommand(intensity);
+                await bleChar.writeValue(bytes);
+                const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+                logMessage(`📤 发送: ${hex} (${intensity}%)`, 'highlight');
+                return true;
+            } catch (e) {
+                logMessage(`❌ 蓝牙发送失败: ${e.message}`, 'error');
+                return false;
+            }
+        }
+
+        // ---------- 续命 ----------
+        function startKeepalive(intensity) {
+            stopKeepalive();
+            if (intensity === 0 || !isBleConnected) return;
+            isRunning = true;
+            sendBleCommand(intensity);
+            keepaliveTimer = setInterval(() => {
+                if (isBleConnected && isRunning) {
+                    sendBleCommand(intensity);
+                } else {
+                    stopKeepalive();
+                }
+            }, KEEPALIVE_INTERVAL_MS);
+        }
+
+        function stopKeepalive() {
+            isRunning = false;
+            if (keepaliveTimer) {
+                clearInterval(keepaliveTimer);
+                keepaliveTimer = null;
+            }
+        }
+
+        // ---------- 设置强度 ----------
+        function setIntensity(value) {
+            value = Math.max(0, Math.min(100, value));
+            currentIntensity = value;
+            intensitySlider.value = value;
+            intensityDisplay.textContent = value + '%';
+            if (value === 0) {
+                stopKeepalive();
+                sendBleCommand(0);
+            } else if (isBleConnected) {
+                startKeepalive(value);
+            }
+        }
+
+        // ---------- 轮询云端 ----------
+        async function pollCloud() {
+            if (!isRelayConnected || !relayUrl || !relaySecret) return;
+            try {
+                const url = `${relayUrl}/toy-next?secret=${relaySecret}`;
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    if (resp.status === 401) {
+                        logMessage('❌ 中继密码错误', 'error');
+                        isRelayConnected = false;
+                        return;
+                    }
+                    return;
+                }
+                const data = await resp.json();
+                if (data.command && data.command.action === 'intensity') {
+                    const val = data.command.value;
+                    logMessage(`📥 云端指令: 强度 ${val}%`, 'info');
+                    setIntensity(val);
+                    document.querySelectorAll('[data-intensity]').forEach(b => {
+                        b.classList.toggle('active', parseInt(b.dataset.intensity) === val);
+                    });
+                }
+            } catch (e) {
+                // 静默失败
+            }
+        }
+
+        function startPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(pollCloud, POLL_INTERVAL_MS);
+            logMessage('🔄 开始轮询云端 (300ms)', 'info');
+        }
+
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                logMessage('⏹ 停止轮询', '');
+            }
+        }
+
+        // ---------- 连接中继 ----------
+        async function connectRelay() {
+            const url = relayUrlInput.value.trim();
+            const secret = relaySecretInput.value.trim();
+            if (!url) {
+                logMessage('❌ 请输入中继地址', 'error');
+                return;
+            }
+            if (!secret) {
+                logMessage('❌ 请输入中继密码', 'error');
+                return;
+            }
+            relayUrl = url.startsWith('http') ? url : 'https://' + url;
+            relaySecret = secret;
+
+            try {
+                logMessage('🔗 测试中继连接...', '');
+                const resp = await fetch(`${relayUrl}/status`);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                logMessage(`✅ 中继连接成功 (状态: ${data.hasCommand ? '有待执行指令' : '空闲'})`, 'success');
+                isRelayConnected = true;
+                connectRelayBtn.textContent = '✅ 中继已连接';
+                startPolling();
+            } catch (e) {
+                logMessage(`❌ 中继连接失败: ${e.message}`, 'error');
+                isRelayConnected = false;
+            }
+        }
+
+        // ---------- 连接蓝牙 ----------
+        async function connectBle() {
+            if (!navigator.bluetooth) {
+                logMessage('❌ 浏览器不支持 Web Bluetooth，请使用 Bluefy', 'error');
+                alert('请使用 Bluefy 浏览器打开');
+                return;
+            }
+            try {
+                setStatus('connecting', '扫描中...');
+                connectBleBtn.disabled = true;
+                logMessage('🔍 扫描 SVAKOM 设备...', '');
+
+                bleDevice = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { name: 'SL278H' },
+                        { namePrefix: 'SVAKOM' },
+                    ],
+                    optionalServices: [SERVICE_UUID],
+                });
+
+                logMessage(`✅ 找到: ${bleDevice.name || '未知'}`, 'success');
+                deviceName.textContent = bleDevice.name || '未知';
+
+                bleServer = await bleDevice.gatt.connect();
+                logMessage('✅ GATT 连接成功', 'success');
+
+                const service = await bleServer.getPrimaryService(SERVICE_UUID);
+                bleChar = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                logMessage('✅ 蓝牙特征已获取', 'success');
+
+                isBleConnected = true;
+                setStatus('connected', '蓝牙已连接');
+                controlSection.classList.add('active');
+                connectBleBtn.textContent = '✅ 蓝牙已连接';
+                logMessage('🎉 蓝牙就绪！等待云端指令...', 'success');
+
+                bleDevice.addEventListener('gattserverdisconnected', () => {
+                    logMessage('⚠️ 蓝牙断开', 'error');
+                    disconnectBle();
+                });
+
+                await sendBleCommand(0);
+
+            } catch (e) {
+                logMessage(`❌ 蓝牙连接失败: ${e.message}`, 'error');
+                setStatus('disconnected', '连接失败');
+                connectBleBtn.disabled = false;
+            }
+        }
+
+        function disconnectBle() {
+            stopKeepalive();
+            isBleConnected = false;
+            bleChar = null;
+            if (bleServer) {
+                try { bleServer.disconnect(); } catch (e) {}
+                bleServer = null;
+            }
+            bleDevice = null;
+            setStatus('disconnected', '未连接');
+            controlSection.classList.remove('active');
+            connectBleBtn.textContent = '🔵 连接蓝牙';
+            connectBleBtn.disabled = false;
+            deviceName.textContent = '-';
+            logMessage('🔌 蓝牙已断开', '');
+        }
+
+        // ---------- 事件绑定 ----------
+        connectRelayBtn.addEventListener('click', connectRelay);
+        connectBleBtn.addEventListener('click', connectBle);
+
+        intensitySlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            setIntensity(val);
+            document.querySelectorAll('[data-intensity]').forEach(b => {
+                b.classList.toggle('active', parseInt(b.dataset.intensity) === val);
+            });
+        });
+
+        document.querySelectorAll('[data-intensity]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const val = parseInt(btn.dataset.intensity);
+                setIntensity(val);
+                document.querySelectorAll('[data-intensity]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        stopBtn.addEventListener('click', () => {
+            setIntensity(0);
+            document.querySelectorAll('[data-intensity]').forEach(b => b.classList.remove('active'));
+            logMessage('⏹ 已停止', '');
+        });
+
+        testBtn.addEventListener('click', async () => {
+            if (!isBleConnected) {
+                logMessage('❌ 请先连接蓝牙', 'error');
+                return;
+            }
+            logMessage('🔬 测试: 发送 30% 指令...', '');
+            await sendBleCommand(30);
+            setTimeout(async () => {
+                await sendBleCommand(0);
+                logMessage('⏹ 测试停止', '');
+            }, 500);
+        });
+
+        // ---------- 启动 ----------
+        setStatus('disconnected', '未连接');
+        logMessage('📡 SVAKOM 网页中继已加载', '');
+        logMessage('💡 先连接中继，再连接蓝牙', '');
+
+        const savedUrl = localStorage.getItem('relayUrl');
+        const savedSecret = localStorage.getItem('relaySecret');
+        if (savedUrl) relayUrlInput.value = savedUrl;
+        if (savedSecret) relaySecretInput.value = savedSecret;
+
+        relayUrlInput.addEventListener('change', () => {
+            localStorage.setItem('relayUrl', relayUrlInput.value);
+        });
+        relaySecretInput.addEventListener('change', () => {
+            localStorage.setItem('relaySecret', relaySecretInput.value);
+        });
+
+        if (!navigator.bluetooth) {
+            logMessage('⚠️ 请使用 Bluefy 浏览器打开', 'error');
+        } else {
+            logMessage('✅ Web Bluetooth 可用', 'success');
+        }
+    </script>
+</body>
+</html>
